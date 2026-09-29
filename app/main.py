@@ -7,12 +7,12 @@ from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from .models import SearchResponse, Track, PrepareRequest, MediaReady
-from .services.media_service import MediaService
+from .services.media_service import MediaService, MediaTemporarilyUnavailable
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("dronnk")
 
-app = FastAPI(title="Dronnk API", version="1.0.0")
+app = FastAPI(title="Dronnk API", version="1.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -28,9 +28,23 @@ def public_base(request: Request) -> str:
         return configured
     return str(request.base_url).rstrip("/")
 
+
+def upstream_error(prefix: str, exc: Exception) -> HTTPException:
+    if isinstance(exc, MediaTemporarilyUnavailable):
+        return HTTPException(
+            status_code=503,
+            detail={
+                "code": "youtube_temporarily_unavailable",
+                "message": str(exc),
+                "retryable": True,
+            },
+            headers={"Retry-After": "45"},
+        )
+    return HTTPException(status_code=502, detail=f"{prefix}: {exc}")
+
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "dronnk-api", "version": "1.0.0"}
+    return {"status": "ok", "service": "dronnk-api", "version": "1.1.0"}
 
 @app.get("/api/v1/search", response_model=SearchResponse)
 def search(q: str = Query(min_length=1), limit: int = 30):
@@ -49,7 +63,7 @@ def prepare_audio(payload: PrepareRequest, request: Request):
         return MediaReady(**result, media_url=f"{public_base(request)}/media/audio/{quote(filename)}")
     except Exception as exc:
         logger.exception("audio prepare failed")
-        raise HTTPException(status_code=502, detail=f"No se pudo preparar el audio: {exc}")
+        raise upstream_error("No se pudo preparar el audio", exc)
 
 @app.post("/api/v1/video/prepare", response_model=MediaReady)
 def prepare_video(payload: PrepareRequest, request: Request):
@@ -59,7 +73,7 @@ def prepare_video(payload: PrepareRequest, request: Request):
         return MediaReady(**result, media_url=f"{public_base(request)}/media/video/{quote(filename)}")
     except Exception as exc:
         logger.exception("video prepare failed")
-        raise HTTPException(status_code=502, detail=f"No se pudo preparar el video: {exc}")
+        raise upstream_error("No se pudo preparar el video", exc)
 
 @app.get("/media/audio/{filename}")
 def get_audio(filename: str):
@@ -124,7 +138,7 @@ def legacy_download(request: Request, url: str = Query(min_length=1)):
         }
     except Exception as exc:
         logger.exception("legacy download failed")
-        raise HTTPException(status_code=502, detail=f"No se pudo descargar la canción: {exc}")
+        raise upstream_error("No se pudo descargar la canción", exc)
 
 
 @app.get("/descargar-video")
@@ -146,4 +160,4 @@ def legacy_download_video(request: Request, url: str = Query(min_length=1)):
         }
     except Exception as exc:
         logger.exception("legacy video download failed")
-        raise HTTPException(status_code=502, detail=f"No se pudo descargar el video: {exc}")
+        raise upstream_error("No se pudo descargar el video", exc)
