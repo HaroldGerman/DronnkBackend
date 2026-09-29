@@ -74,3 +74,54 @@ def get_video(filename: str):
     if not path.exists():
         raise HTTPException(status_code=404, detail="Video no encontrado")
     return FileResponse(path, media_type="video/mp4", filename=path.name)
+
+
+# -------------------------------------------------------------------------
+# Compatibilidad con Dronnk Android v1.0 inicial
+# El primer APK todavía usa las rutas/respuestas heredadas de TushNH.
+# Se mantienen como aliases mientras migramos el cliente a /api/v1/*.
+# -------------------------------------------------------------------------
+@app.get("/buscar")
+def legacy_search(request: Request, termino: str = Query(min_length=1), limit: int = 30):
+    try:
+        items = media.search(termino.strip(), limit)
+        canciones = []
+        for item in items:
+            canciones.append({
+                "id": item.get("id"),
+                "titulo": item.get("title") or "Canción",
+                "url": item.get("source_url"),
+                "thumbnail": item.get("thumbnail"),
+                "duracion": str(item.get("duration")) if item.get("duration") is not None else None,
+                "canal": item.get("artist") or "",
+                "archivo": None,
+                "isFavorite": False,
+                "isDownloaded": False,
+                "localPath": None,
+            })
+        return {"canciones": canciones}
+    except Exception as exc:
+        logger.exception("legacy search failed")
+        raise HTTPException(status_code=502, detail=f"No se pudo buscar: {exc}")
+
+
+@app.get("/descargar")
+def legacy_download(request: Request, url: str = Query(min_length=1)):
+    try:
+        result = media.prepare_audio(url)
+        filename = result["filename"]
+        media_url = f"{public_base(request)}/media/audio/{quote(filename)}"
+        duration = result.get("duration")
+        return {
+            "status": "success",
+            "url": media_url,
+            "titulo": result.get("title"),
+            "archivo": filename,
+            "thumbnail": result.get("thumbnail"),
+            "canal": result.get("artist") or "",
+            "duracion": str(duration) if duration is not None else None,
+            "message": None,
+        }
+    except Exception as exc:
+        logger.exception("legacy download failed")
+        raise HTTPException(status_code=502, detail=f"No se pudo descargar la canción: {exc}")
