@@ -125,3 +125,25 @@ def legacy_download(request: Request, url: str = Query(min_length=1)):
     except Exception as exc:
         logger.exception("legacy download failed")
         raise HTTPException(status_code=502, detail=f"No se pudo descargar la canción: {exc}")
+
+
+@app.get("/descargar-video")
+def legacy_download_video(request: Request, url: str = Query(min_length=1)):
+    try:
+        result = media.prepare_video(url)
+        filename = result["filename"]
+        media_url = f"{public_base(request)}/media/video/{quote(filename)}"
+        duration = result.get("duration")
+        return {
+            "status": "success",
+            "url": media_url,
+            "titulo": result.get("title"),
+            "archivo": filename,
+            "thumbnail": result.get("thumbnail"),
+            "canal": result.get("artist") or "",
+            "duracion": str(duration) if duration is not None else None,
+            "message": None,
+        }
+    except Exception as exc:
+        logger.exception("legacy video download failed")
+        raise HTTPException(status_code=502, detail=f"No se pudo descargar el video: {exc}")
