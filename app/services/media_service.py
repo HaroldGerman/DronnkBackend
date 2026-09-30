@@ -17,6 +17,10 @@ class MediaTemporarilyUnavailable(RuntimeError):
     """Raised when the upstream provider is temporarily refusing extraction."""
 
 
+class ExternalSourceOnly(RuntimeError):
+    """Raised when media is intentionally left on the original external source."""
+
+
 class MediaService:
     def __init__(self) -> None:
         self.data_dir = Path(os.getenv("DRONNK_DATA_DIR", "/data"))
@@ -82,6 +86,14 @@ class MediaService:
         if self._has_cookies():
             opts["cookiefile"] = str(self.cookies_file)
         return opts
+
+    @staticmethod
+    def _is_youtube_url(url: str) -> bool:
+        try:
+            host = urlparse(url).netloc.lower()
+            return "youtube.com" in host or "youtu.be" in host
+        except Exception:
+            return False
 
     @staticmethod
     def _video_id(url: str) -> str:
@@ -213,6 +225,11 @@ class MediaService:
         if existing and existing.stat().st_size > 1024:
             return self._metadata_for_existing(url, existing, video_id, "audio")
 
+        if self._is_youtube_url(url):
+            raise ExternalSourceOnly(
+                "Esta canción no está guardada en Dronnk. Ábrela en la fuente original."
+            )
+
         self._assert_not_in_cooldown(video_id)
 
         last_error: Exception | None = None
@@ -271,6 +288,11 @@ class MediaService:
         existing = next(self.video_dir.glob(f"{video_id}__*.mp4"), None)
         if existing and existing.stat().st_size > 1024:
             return self._metadata_for_existing(url, existing, video_id, "video")
+
+        if self._is_youtube_url(url):
+            raise ExternalSourceOnly(
+                "Este video no está guardado en Dronnk. Ábrelo en la fuente original."
+            )
 
         self._assert_not_in_cooldown(video_id)
 
