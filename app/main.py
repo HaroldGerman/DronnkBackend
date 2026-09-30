@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from .models import SearchResponse, Track, PrepareRequest, MediaReady
-from .services.media_service import MediaService, MediaTemporarilyUnavailable
+from .services.media_service import MediaService, MediaTemporarilyUnavailable, ExternalSourceOnly
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("dronnk")
@@ -30,6 +30,15 @@ def public_base(request: Request) -> str:
 
 
 def upstream_error(prefix: str, exc: Exception) -> HTTPException:
+    if isinstance(exc, ExternalSourceOnly):
+        return HTTPException(
+            status_code=409,
+            detail={
+                "code": "external_source_only",
+                "message": str(exc),
+                "retryable": False,
+            },
+        )
     if isinstance(exc, MediaTemporarilyUnavailable):
         return HTTPException(
             status_code=503,
